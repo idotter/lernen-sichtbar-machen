@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* shadcn/ui system tokens (beibehalten für Kompatibilität) */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -29,7 +30,41 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+
+    /* ============================================
+       Lernen sichtbar machen — Design-Tokens (Final)
+       Quelle: UX-Design-Spec §9.3
+       ============================================ */
+
+    /* Layout */
+    --color-bg: #F0F0F0;
+    --color-surface: #FFFFFF;
+    --color-sidebar: #1B1D23;
+    --color-action: #1A1A1A;
+
+    /* Text */
+    --color-text: #1A1A1A;
+    --color-text-muted: #666666;
+
+    /* Borders */
+    --color-border: rgba(0, 0, 0, 0.07);
+
+    /* Lernlandkarte-Knoten (fix in allen Themes) */
+    --color-node-frage: #F0B429;       /* Gelb — Frage des Kindes */
+    --color-node-frage-bg: #FEF9E7;
+    --color-node-ki: #5BBF7A;          /* Grün — KI-Gegenfrage */
+    --color-node-ki-bg: #EEF8F2;
+    --color-node-schritt: #4B9EE8;     /* Blau — Lernschritt/Artefakt */
+    --color-node-schritt-bg: #EBF3FF;
+
+    /* Status */
+    --color-inactive: #E0E0E0;
+
+    /* Radius */
+    --lsm-radius: 8px;
+    --lsm-radius-pill: 20px;
   }
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -64,5 +99,23 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ============================================
+   KI-Pattern: Gestrichelt = Vorschlag, Solid = Entscheidung
+   Universell auf alle KI-generierten Elemente anwendbar.
+   Quelle: UX-Design-Spec §9.3 / Experience Principle #2
+   ============================================ */
+@layer utilities {
+  .ki-suggested {
+    border: 1.5px dashed var(--color-node-ki);
+    background-color: var(--color-node-ki-bg);
+    transition: border-style 300ms ease, background-color 300ms ease;
+  }
+
+  .ki-confirmed {
+    border: 1.5px solid var(--color-node-ki);
+    background-color: var(--color-node-ki-bg);
   }
 }

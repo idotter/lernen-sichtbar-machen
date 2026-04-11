@@ -11,6 +11,7 @@ export default {
   ],
   theme: {
     extend: {
+      // shadcn/ui system tokens + Lernen sichtbar machen App-Tokens (UX-Spec §9.3)
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -52,11 +53,22 @@ export default {
           "4": "hsl(var(--chart-4))",
           "5": "hsl(var(--chart-5))",
         },
+        // App-spezifische Tokens (Lernen sichtbar machen)
+        "lsm-bg":       "var(--color-bg)",
+        "lsm-surface":  "var(--color-surface)",
+        "lsm-sidebar":  "var(--color-sidebar)",
+        "lsm-action":   "var(--color-action)",
+        "node-frage":   "var(--color-node-frage)",
+        "node-ki":      "var(--color-node-ki)",
+        "node-schritt": "var(--color-node-schritt)",
+        "lsm-inactive": "var(--color-inactive)",
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        DEFAULT: "var(--lsm-radius)",   // 8px — konsistente Basis
+        pill: "var(--lsm-radius-pill)", // 20px — für Tags/Badges
       },
     },
   },
