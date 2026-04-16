@@ -111,7 +111,7 @@
   .ki-suggested {
     border: 1.5px dashed var(--color-node-ki);
     background-color: var(--color-node-ki-bg);
-    transition: border-style 300ms ease, background-color 300ms ease;
+    transition: background-color 300ms ease;
   }
 
   .ki-confirmed {

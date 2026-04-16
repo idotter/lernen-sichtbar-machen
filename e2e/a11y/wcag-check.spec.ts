@@ -8,6 +8,10 @@ test.describe('WCAG 2.1 AA — Öffentliche Seiten', () => {
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
       .analyze()
+    if (results.violations.length > 0) {
+      const details = results.violations.map(v => `[${v.id}] ${v.description} — ${v.nodes.map(n => n.html).join(', ')}`).join('\n')
+      throw new Error(`WCAG-Verletzungen gefunden:\n${details}`)
+    }
     expect(results.violations).toEqual([])
   })
 })

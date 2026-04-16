@@ -53,9 +53,26 @@ describe('fromZodError', () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       const actionResult = fromZodError(result.error)
+      expect(actionResult.success).toBe(false)
       if (!actionResult.success) {
         expect(actionResult.fieldErrors?.name).toBeDefined()
         expect(actionResult.fieldErrors?.email).toBeDefined()
+      }
+    }
+  })
+
+  it('inkludiert formErrors (root-level refine) im error-String', () => {
+    const schema = z.object({
+      password: z.string(),
+      confirm: z.string(),
+    }).refine((d) => d.password === d.confirm, 'Passwörter stimmen nicht überein')
+    const result = schema.safeParse({ password: 'abc', confirm: 'xyz' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const actionResult = fromZodError(result.error)
+      expect(actionResult.success).toBe(false)
+      if (!actionResult.success) {
+        expect(actionResult.error).toBe('Passwörter stimmen nicht überein')
       }
     }
   })

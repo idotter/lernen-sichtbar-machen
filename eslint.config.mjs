@@ -14,6 +14,13 @@ const eslintConfig = [
     ignores: ['.next/**', 'node_modules/**', 'playwright-report/**', 'test-results/**'],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // Test-Dateien: no-explicit-any lockern (Vitest-Mocks benötigen `as any`)
+  {
+    files: ['**/*.test.ts', '**/*.test.tsx', '**/tests/**', '**/e2e/**'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 ];
 
 export default eslintConfig;

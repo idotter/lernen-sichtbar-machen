@@ -9,10 +9,11 @@ export type ActionResult<T = void> =
 
 // Zod-Validierungsfehler → ActionResult (nie inline flatten())
 export function fromZodError(err: ZodError): ActionResult<never> {
+  const flat = err.flatten()
   return {
     success: false,
-    error: 'Validierungsfehler',
-    fieldErrors: err.flatten().fieldErrors as Record<string, string[]>,
+    error: flat.formErrors.length > 0 ? flat.formErrors.join(', ') : 'Validierungsfehler',
+    fieldErrors: flat.fieldErrors as Record<string, string[]>,
   }
 }
 
