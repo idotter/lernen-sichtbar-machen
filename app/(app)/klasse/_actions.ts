@@ -1,4 +1,5 @@
 'use server'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
 import { createClient } from '@/lib/supabase/server'
@@ -6,12 +7,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema/users'
 import { getCurrentUser } from '@/lib/db/queries/users'
+import { createClass as dbCreateClass } from '@/lib/db/queries/classes'
 import { ok, fail, fromZodError, type ActionResult } from '@/lib/utils/action-result'
+
+const createClassSchema = z.object({
+  name: z.string().trim().min(2, 'Klassenname muss mindestens 2 Zeichen lang sein.').max(100, 'Maximal 100 Zeichen erlaubt.'),
+})
 
 const einladungSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
 })
 
+export type CreateClassResult = ActionResult<{ id: string }>
 export type EinladungResult = ActionResult<void>
 
 function getBaseUrl(): string {
@@ -20,15 +27,20 @@ function getBaseUrl(): string {
   return 'http://localhost:3000'
 }
 
-export async function inviteSchulleitung(
-  _prevState: EinladungResult | null,
+/**
+ * Lehrperson (oder SL) legt eine neue Klasse in ihrer Schuleinheit an.
+ * RLS `classes_school_isolation` stellt sicher, dass nur User derselben
+ * Schule die Klasse sehen können.
+ */
+export async function createClass(
+  _prevState: CreateClassResult | null,
   formData: FormData
-): Promise<EinladungResult> {
-  const raw = { email: formData.get('email') }
+): Promise<CreateClassResult> {
+  const raw = { name: formData.get('name') }
 
-  const parsed = einladungSchema.safeParse(raw)
+  const parsed = createClassSchema.safeParse(raw)
   if (!parsed.success) {
-    return fromZodError(parsed.error) as EinladungResult
+    return fromZodError(parsed.error) as CreateClassResult
   }
 
   const supabase = await createClient()
@@ -37,45 +49,23 @@ export async function inviteSchulleitung(
 
   const currentUser = await getCurrentUser(user.id)
   if (!currentUser) return fail('Kein Benutzerkonto gefunden.')
-  if (currentUser.role !== 'schulleitung') return fail('Keine Berechtigung — nur Schulleitungen können einladen.')
 
-  const baseUrl = getBaseUrl()
-
-  const admin = createAdminClient()
-
-  // Schritt 1: User einladen
-  const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
-    redirectTo: `${baseUrl}/registrierung/callback`,
-  })
-
-  if (inviteError || !inviteData.user) {
-    return fail('Einladung konnte nicht verschickt werden.')
+  try {
+    const row = await dbCreateClass(currentUser.schoolId, parsed.data.name)
+    revalidatePath('/klasse')
+    return ok({ id: row.id })
+  } catch {
+    return fail('Klasse konnte nicht angelegt werden.')
   }
-
-  // Schritt 2: app_metadata setzen (nur server-seitig schreibbar — sicher gegen Manipulation)
-  const { error: metaError } = await admin.auth.admin.updateUserById(inviteData.user.id, {
-    app_metadata: {
-      pendingRole: 'schulleitung',
-      schoolId: currentUser.schoolId,
-    },
-  })
-
-  if (metaError) {
-    // Einladung war erfolgreich, aber Metadaten konnten nicht gesetzt werden
-    // Auth-User aufräumen damit kein inkonsistenter Zustand entsteht
-    await admin.auth.admin.deleteUser(inviteData.user.id)
-    return fail('Einladung konnte nicht verschickt werden.')
-  }
-
-  return ok(undefined)
 }
 
 /**
- * SL lädt eine neue Lehrperson per E-Mail in ihre Schuleinheit ein.
- * Analoger Flow zu inviteSchulleitung, aber mit pendingRole='lehrperson'.
- * Dup-Check: E-Mail darf in derselben Schule nicht bereits vorhanden sein.
+ * LP oder SL lädt eine weitere Lehrperson per E-Mail zur Schuleinheit ein.
+ * Dadurch erhält die eingeladene Person über School-Level RLS Zugriff auf
+ * alle Klassen derselben Schule (inkl. der Klasse, aus deren Kontext
+ * eingeladen wurde).
  */
-export async function inviteLehrperson(
+export async function inviteLehrpersonToClass(
   _prevState: EinladungResult | null,
   formData: FormData
 ): Promise<EinladungResult> {
@@ -92,9 +82,11 @@ export async function inviteLehrperson(
 
   const currentUser = await getCurrentUser(user.id)
   if (!currentUser) return fail('Kein Benutzerkonto gefunden.')
-  if (currentUser.role !== 'schulleitung') return fail('Keine Berechtigung — nur Schulleitungen können einladen.')
+  if (currentUser.role !== 'lehrperson' && currentUser.role !== 'schulleitung') {
+    return fail('Keine Berechtigung.')
+  }
 
-  // Dup-Check: E-Mail existiert bereits in derselben Schuleinheit (aktiver User)
+  // Dup-Check: E-Mail in derselben Schuleinheit bereits aktiv?
   const existing = await db
     .select({ id: users.id })
     .from(users)
@@ -116,7 +108,6 @@ export async function inviteLehrperson(
   const baseUrl = getBaseUrl()
   const admin = createAdminClient()
 
-  // Schritt 1: User einladen
   const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
     redirectTo: `${baseUrl}/registrierung/callback`,
   })
@@ -125,7 +116,6 @@ export async function inviteLehrperson(
     return fail('Einladung konnte nicht verschickt werden.')
   }
 
-  // Schritt 2: app_metadata setzen (pendingRole=lehrperson — nur server-seitig schreibbar)
   const { error: metaError } = await admin.auth.admin.updateUserById(inviteData.user.id, {
     app_metadata: {
       pendingRole: 'lehrperson',
@@ -134,7 +124,6 @@ export async function inviteLehrperson(
   })
 
   if (metaError) {
-    // Auth-User aufräumen damit kein inkonsistenter Zustand entsteht
     await admin.auth.admin.deleteUser(inviteData.user.id)
     return fail('Einladung konnte nicht verschickt werden.')
   }

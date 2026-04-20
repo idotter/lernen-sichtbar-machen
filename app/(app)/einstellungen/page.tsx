@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/db/queries/users'
 import { getSchoolUnit } from '@/lib/db/queries/school-units'
 import { SlEinladungForm } from '@/components/features/auth/SlEinladungForm'
+import { LpEinladungForm } from '@/components/features/auth/LpEinladungForm'
 
 export const metadata = { title: 'Einstellungen — Lernen sichtbar machen' }
 
@@ -15,11 +16,9 @@ export default async function EinstellungenPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [currentUser, schoolUnit] = await Promise.all([
-    getCurrentUser(user.id),
-    // schoolId wird aus dem DB-User gelesen
-    getCurrentUser(user.id).then(u => u ? getSchoolUnit(u.schoolId) : null),
-  ])
+  // Sequentiell: erst User, dann School — vermeidet doppelten DB-Call
+  const currentUser = await getCurrentUser(user.id)
+  const schoolUnit = currentUser ? await getSchoolUnit(currentUser.schoolId) : null
 
   if (!currentUser || !schoolUnit) {
     // Sollte nicht vorkommen — Cleanup-Fehler beim Registrierungs-Callback
@@ -84,6 +83,16 @@ export default async function EinstellungenPage() {
             für diese Schuleinheit.
           </p>
           <SlEinladungForm />
+        </section>
+
+        {/* Lehrperson einladen */}
+        <section className="bg-lsm-surface rounded-lg border p-6 space-y-4">
+          <h2 className="font-semibold">Lehrperson einladen</h2>
+          <p className="text-sm text-muted-foreground">
+            Die eingeladene Lehrperson erhält eine E-Mail und kann nach Annahme Klassen in dieser
+            Schuleinheit erstellen und Lernende verwalten.
+          </p>
+          <LpEinladungForm />
         </section>
       </div>
     </div>

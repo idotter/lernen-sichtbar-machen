@@ -25,29 +25,70 @@ export async function GET(request: NextRequest) {
   const authUser = sessionData.user
   const admin = createAdminClient()
 
-  // Prüfen ob es eine Einladung (zweite SL) oder eine Neu-Registrierung ist
-  const pendingRole = authUser.user_metadata?.pendingRole as string | undefined
-  const pendingSchoolId = authUser.user_metadata?.schoolId as string | undefined
+  // E-Mail-Prüfung — Supabase-User ohne E-Mail ist für diesen Flow ungültig
+  const email = authUser.email
+  if (!email) {
+    await admin.auth.admin.deleteUser(authUser.id)
+    return NextResponse.redirect(`${origin}/registrierung?error=missing_email`)
+  }
+
+  // Einladungs-Daten aus app_metadata lesen (nur server-seitig schreibbar — sicher)
+  const pendingRole = authUser.app_metadata?.pendingRole as string | undefined
+  const pendingSchoolId = authUser.app_metadata?.schoolId as string | undefined
 
   if (pendingRole === 'schulleitung' && pendingSchoolId) {
     // Einladungs-Flow: zweite Schulleitung einer bestehenden Schuleinheit
-    const { error: userInsertError } = await admin.from('users').insert({
-      id: authUser.id,
-      school_id: pendingSchoolId,
-      role: 'schulleitung',
-      email: authUser.email!,
-      display_name: authUser.user_metadata?.displayName ?? authUser.email,
-    })
+    try {
+      const { error: userInsertError } = await admin.from('users').insert({
+        id: authUser.id,
+        school_id: pendingSchoolId,
+        role: 'schulleitung',
+        email,
+        display_name: authUser.user_metadata?.displayName ?? email,
+      })
 
-    if (userInsertError) {
-      // Cleanup: Auth-User löschen wenn DB-Insert fehlschlägt
+      if (userInsertError) {
+        await admin.auth.admin.deleteUser(authUser.id)
+        return NextResponse.redirect(
+          `${origin}/registrierung?error=${encodeURIComponent('Einladung konnte nicht aktiviert werden.')}`
+        )
+      }
+    } catch {
+      // Netzwerkfehler oder Admin-Client-Fehler
       await admin.auth.admin.deleteUser(authUser.id)
       return NextResponse.redirect(
-        `${origin}/registrierung?error=${encodeURIComponent('Einladung konnte nicht aktiviert werden: ' + userInsertError.message)}`
+        `${origin}/registrierung?error=${encodeURIComponent('Einladung konnte nicht aktiviert werden.')}`
       )
     }
 
     return NextResponse.redirect(`${origin}/einstellungen`)
+  }
+
+  if (pendingRole === 'lehrperson' && pendingSchoolId) {
+    // Einladungs-Flow: Lehrperson einer bestehenden Schuleinheit
+    try {
+      const { error: userInsertError } = await admin.from('users').insert({
+        id: authUser.id,
+        school_id: pendingSchoolId,
+        role: 'lehrperson',
+        email,
+        display_name: authUser.user_metadata?.displayName ?? email,
+      })
+
+      if (userInsertError) {
+        await admin.auth.admin.deleteUser(authUser.id)
+        return NextResponse.redirect(
+          `${origin}/registrierung?error=${encodeURIComponent('Einladung konnte nicht aktiviert werden.')}`
+        )
+      }
+    } catch {
+      await admin.auth.admin.deleteUser(authUser.id)
+      return NextResponse.redirect(
+        `${origin}/registrierung?error=${encodeURIComponent('Einladung konnte nicht aktiviert werden.')}`
+      )
+    }
+
+    return NextResponse.redirect(`${origin}/klasse`)
   }
 
   // Neu-Registrierungs-Flow: neue Schuleinheit anlegen
@@ -59,29 +100,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/registrierung?error=missing_school_name`)
   }
 
-  // Transaktion: school_units → users (via Admin-Client, umgeht RLS)
-  let schoolId: string
+  // Transaktion: school_units + users atomar — kein Orphan bei Fehler
   try {
-    const [newSchool] = await db
-      .insert(schoolUnits)
-      .values({ name: schulName, curriculumAdapter: 'lp21' })
-      .returning({ id: schoolUnits.id })
+    await db.transaction(async (tx) => {
+      const [newSchool] = await tx
+        .insert(schoolUnits)
+        .values({ name: schulName, curriculumAdapter: 'lp21' })
+        .returning({ id: schoolUnits.id })
 
-    schoolId = newSchool.id
-
-    await db.insert(users).values({
-      id: authUser.id,
-      schoolId,
-      role: 'schulleitung',
-      email: authUser.email!,
-      displayName: displayName ?? authUser.email,
+      await tx.insert(users).values({
+        id: authUser.id,
+        schoolId: newSchool.id,
+        role: 'schulleitung',
+        email,
+        displayName: displayName ?? email,
+      })
     })
-  } catch (dbError) {
-    // Cleanup: Auth-User löschen wenn DB-Setup fehlschlägt
+  } catch {
+    // Transaktion rollback → kein Orphan; Auth-User löschen
     await admin.auth.admin.deleteUser(authUser.id)
-    const msg = dbError instanceof Error ? dbError.message : 'setup_failed'
     return NextResponse.redirect(
-      `${origin}/registrierung?error=${encodeURIComponent('Schuleinheit konnte nicht eingerichtet werden: ' + msg)}`
+      `${origin}/registrierung?error=${encodeURIComponent('Schuleinheit konnte nicht eingerichtet werden.')}`
     )
   }
 

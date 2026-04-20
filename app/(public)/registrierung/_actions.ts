@@ -2,7 +2,6 @@
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { fromZodError, ok, fail, type ActionResult } from '@/lib/utils/action-result'
-import { headers } from 'next/headers'
 
 const registrierungSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
@@ -13,6 +12,12 @@ const registrierungSchema = z.object({
 
 type RegistrierungData = z.infer<typeof registrierungSchema>
 export type RegistrierungResult = ActionResult<{ pendingConfirmation: boolean }>
+
+function getBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  return 'http://localhost:3000'
+}
 
 export async function registerSchulleitung(
   _prevState: RegistrierungResult | null,
@@ -32,21 +37,21 @@ export async function registerSchulleitung(
 
   const { email, passwort, anzeigeName, schulName }: RegistrierungData = parsed.data
 
-  const headersList = await headers()
-  const origin = headersList.get('origin') ?? 'http://localhost:3000'
+  const baseUrl = getBaseUrl()
 
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signUp({
     email,
     password: passwort,
     options: {
-      emailRedirectTo: `${origin}/registrierung/callback`,
+      emailRedirectTo: `${baseUrl}/registrierung/callback`,
       data: { displayName: anzeigeName, schulName },
     },
   })
 
   if (error) {
-    return fail(error.message)
+    // Keine rohen Supabase-Fehlermeldungen an den User leaken
+    return fail('Registrierung fehlgeschlagen — bitte erneut versuchen.')
   }
 
   if (!data.user) {

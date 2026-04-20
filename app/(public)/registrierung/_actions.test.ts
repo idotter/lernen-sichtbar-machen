@@ -4,11 +4,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }))
 
-vi.mock('next/headers', () => ({
-  headers: vi.fn().mockResolvedValue({
-    get: vi.fn().mockReturnValue('http://localhost:3000'),
-  }),
-}))
+// headers-Mock nicht mehr nötig — Origin kommt jetzt aus Env-Var
 
 import { registerSchulleitung } from './_actions'
 import { createClient } from '@/lib/supabase/server'
@@ -100,7 +96,8 @@ describe('registerSchulleitung', () => {
     const result = await registerSchulleitung(null, formData)
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error).toContain('E-Mail bereits registriert')
+      // Sanitized error — keine rohen Supabase-Messages mehr
+      expect(result.error).toContain('Registrierung fehlgeschlagen')
     }
   })
 })

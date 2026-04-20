@@ -1,8 +1,7 @@
 'use client'
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { useFormStatus } from 'react-dom'
-import { useState } from 'react'
-import { inviteSchulleitung, type EinladungResult } from '@/app/(app)/einstellungen/_actions'
+import { inviteLehrpersonToClass, type EinladungResult } from '@/app/(app)/klasse/_actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,8 +10,8 @@ import { cn } from '@/lib/utils'
 function SubmitButton() {
   const { pending } = useFormStatus()
   return (
-    <Button type="submit" disabled={pending}>
-      {pending ? 'Einladung wird verschickt…' : 'Als Schulleitung hinzufügen'}
+    <Button type="submit" disabled={pending} className="min-h-[44px]">
+      {pending ? 'Einladung wird verschickt…' : 'Lehrperson einladen'}
     </Button>
   )
 }
@@ -22,14 +21,13 @@ function FieldError({ errors }: { errors?: string[] }) {
   return <p className="text-sm text-destructive mt-1">{errors[0]}</p>
 }
 
-export function SlEinladungForm() {
+export function LpEinladungKlasseForm() {
   const [state, action, isPending] = useActionState<EinladungResult | null, FormData>(
-    inviteSchulleitung,
+    inviteLehrpersonToClass,
     null
   )
   const [showSuccess, setShowSuccess] = useState(false)
 
-  // Erfolg anzeigen, aber Reset-Button bieten für weitere Einladungen
   if (state?.success && !showSuccess) {
     setShowSuccess(true)
   }
@@ -38,14 +36,14 @@ export function SlEinladungForm() {
     return (
       <div className="space-y-2">
         <div className="rounded-lg border bg-muted p-4 text-sm text-center">
-          Einladung verschickt. Die Person erhält eine E-Mail.
+          Einladung verschickt. Die Lehrperson erhält eine E-Mail.
         </div>
         <button
           type="button"
           onClick={() => setShowSuccess(false)}
           className="text-sm text-muted-foreground underline underline-offset-4 hover:text-primary"
         >
-          Weitere Person einladen
+          Weitere Lehrperson einladen
         </button>
       </div>
     )
@@ -57,15 +55,15 @@ export function SlEinladungForm() {
   return (
     <form action={action} className="flex gap-2 items-end">
       <div className="flex-1">
-        <Label htmlFor="sl-email">E-Mail-Adresse</Label>
+        <Label htmlFor="lp-klasse-email">E-Mail-Adresse</Label>
         <Input
-          id="sl-email"
+          id="lp-klasse-email"
           name="email"
           type="email"
           autoComplete="off"
-          placeholder="lp@schule.ch"
+          placeholder="kollegin@schule.ch"
           disabled={isPending}
-          className={cn(fieldErrors.email && 'border-destructive')}
+          className={cn('min-h-[44px]', fieldErrors.email && 'border-destructive')}
         />
         <FieldError errors={fieldErrors.email} />
         {globalError && <p className="text-sm text-destructive mt-1">{globalError}</p>}
