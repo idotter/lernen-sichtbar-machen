@@ -7,18 +7,13 @@ import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema/users'
 import { getCurrentUser } from '@/lib/db/queries/users'
 import { ok, fail, fromZodError, type ActionResult } from '@/lib/utils/action-result'
+import { getBaseUrl } from '@/lib/utils/base-url'
 
 const einladungSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
 })
 
 export type EinladungResult = ActionResult<void>
-
-function getBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3000'
-}
 
 export async function inviteSchulleitung(
   _prevState: EinladungResult | null,

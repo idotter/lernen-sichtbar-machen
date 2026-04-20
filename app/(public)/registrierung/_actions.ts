@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { fromZodError, ok, fail, type ActionResult } from '@/lib/utils/action-result'
+import { getBaseUrl } from '@/lib/utils/base-url'
 
 const registrierungSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
@@ -12,12 +13,6 @@ const registrierungSchema = z.object({
 
 type RegistrierungData = z.infer<typeof registrierungSchema>
 export type RegistrierungResult = ActionResult<{ pendingConfirmation: boolean }>
-
-function getBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3000'
-}
 
 export async function registerSchulleitung(
   _prevState: RegistrierungResult | null,

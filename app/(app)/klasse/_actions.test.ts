@@ -21,18 +21,32 @@ vi.mock('@/lib/db/queries/classes', () => ({
   getClassById: vi.fn(),
 }))
 
+vi.mock('@/lib/db/queries/children', () => ({
+  getChildById: vi.fn(),
+}))
+
+vi.mock('@/lib/auth/children-auth', () => ({
+  generateInviteCode: vi.fn(() => 'ABC234'),
+}))
 
 vi.mock('@/lib/db/client', () => ({
   db: {
     select: vi.fn(),
+    update: vi.fn(),
   },
 }))
 
-import { createClass as createClassAction, inviteLehrpersonToClass } from './_actions'
+import {
+  createClass as createClassAction,
+  inviteLehrpersonToClass,
+  generateInviteCode as generateInviteCodeAction,
+  resetChildPin,
+} from './_actions'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getCurrentUser } from '@/lib/db/queries/users'
-import { createClass as dbCreateClass } from '@/lib/db/queries/classes'
+import { createClass as dbCreateClass, getClassById } from '@/lib/db/queries/classes'
+import { getChildById } from '@/lib/db/queries/children'
 import { db } from '@/lib/db/client'
 
 const mockAuthUser = { id: 'auth-user-123' }
@@ -151,6 +165,7 @@ describe('createClass action', () => {
       name: '3a',
       isDeleted: false,
       deletedAt: null,
+      inviteCode: null,
       createdAt: new Date(),
     })
 
@@ -176,6 +191,7 @@ describe('createClass action', () => {
       name: '4b',
       isDeleted: false,
       deletedAt: null,
+      inviteCode: null,
       createdAt: new Date(),
     })
 
@@ -306,3 +322,181 @@ describe('inviteLehrpersonToClass', () => {
   })
 })
 
+// ============================================================================
+// generateInviteCode
+// ============================================================================
+
+function mockDbUpdateSuccess(code: string) {
+  const chain = {
+    set: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([{ inviteCode: code }]),
+  }
+  vi.mocked(db.update).mockReturnValue(chain as any)
+  return chain
+}
+
+const mockKlasse = {
+  id: 'class-1',
+  schoolId: 'school-456',
+  name: 'Klasse 5b',
+  inviteCode: null,
+  isDeleted: false,
+  deletedAt: null,
+  createdAt: new Date(),
+}
+
+describe('generateInviteCode (Server Action)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('lehnt ungültige classId ab', async () => {
+    const result = await generateInviteCodeAction('')
+    expect(result.success).toBe(false)
+  })
+
+  it('gibt Fehler zurück wenn nicht eingeloggt', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    } as any)
+    const result = await generateInviteCodeAction('class-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('Nicht eingeloggt')
+  })
+
+  it('gibt Fehler zurück wenn User weder LP noch SL', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...mockLP, role: 'kind' as any })
+    const result = await generateInviteCodeAction('class-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('Keine Berechtigung')
+  })
+
+  it('gibt Fehler zurück wenn Klasse nicht gefunden', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getClassById).mockResolvedValue(null)
+    const result = await generateInviteCodeAction('class-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('nicht gefunden')
+  })
+
+  it('lehnt Klassen einer fremden Schule ab', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getClassById).mockResolvedValue({
+      ...mockKlasse,
+      schoolId: 'andere-schule',
+    })
+    const result = await generateInviteCodeAction('class-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('Keine Berechtigung')
+  })
+
+  it('generiert erfolgreich einen Code und gibt ihn zurück', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getClassById).mockResolvedValue(mockKlasse)
+    mockDbUpdateSuccess('ABC234')
+
+    const result = await generateInviteCodeAction('class-1')
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.code).toBe('ABC234')
+  })
+})
+
+// ============================================================================
+// resetChildPin
+// ============================================================================
+
+const mockChild = {
+  id: 'child-1',
+  classId: 'class-1',
+  schoolId: 'school-456',
+  displayName: 'Anna',
+  pinHash: 'hashed',
+  supabaseUserId: null,
+  isDeleted: false,
+  deletedAt: null,
+  createdAt: new Date(),
+}
+
+function mockChildUpdateSuccess() {
+  const chain = {
+    set: vi.fn().mockReturnThis(),
+    where: vi.fn().mockResolvedValue(undefined),
+  }
+  vi.mocked(db.update).mockReturnValue(chain as any)
+  return chain
+}
+
+describe('resetChildPin', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('lehnt ungültige childId ab', async () => {
+    const result = await resetChildPin('')
+    expect(result.success).toBe(false)
+  })
+
+  it('lehnt ab wenn nicht eingeloggt', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    } as any)
+    const result = await resetChildPin('child-1')
+    expect(result.success).toBe(false)
+  })
+
+  it('lehnt ab wenn User kein LP/SL ist', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...mockLP, role: 'kind' as any })
+    const result = await resetChildPin('child-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('Keine Berechtigung')
+  })
+
+  it('lehnt ab wenn Kind nicht gefunden', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getChildById).mockResolvedValue(null)
+    const result = await resetChildPin('child-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('nicht gefunden')
+  })
+
+  it('lehnt ab wenn Kind fremder Schule', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getChildById).mockResolvedValue({ ...mockChild, schoolId: 'andere-schule' })
+    const result = await resetChildPin('child-1')
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain('Keine Berechtigung')
+  })
+
+  it('setzt PIN erfolgreich zurück (Soft-Delete)', async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: mockAuthUser } }) },
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(mockLP)
+    vi.mocked(getChildById).mockResolvedValue(mockChild)
+    const chain = mockChildUpdateSuccess()
+
+    const result = await resetChildPin('child-1')
+    expect(result.success).toBe(true)
+    expect(chain.set).toHaveBeenCalledWith(
+      expect.objectContaining({ isDeleted: true })
+    )
+  })
+})
