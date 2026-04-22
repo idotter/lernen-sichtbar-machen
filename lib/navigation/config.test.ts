@@ -39,4 +39,21 @@ describe('getNavItems', () => {
     expect(hrefs).not.toContain('/einstellungen')
     expect(hrefs).not.toContain('/uebersicht')
   })
+
+  it('Multi-Role LP+SL: kombiniert beide Nav-Items ohne Duplikate', () => {
+    const items = getNavItems(['lehrperson', 'schulleitung'])
+    const hrefs = items.map(i => i.href)
+    expect(hrefs).toContain('/klasse')
+    expect(hrefs).toContain('/lp21')
+    expect(hrefs).toContain('/uebersicht')
+    expect(hrefs).toContain('/einstellungen')
+    // Keine Duplikate
+    expect(hrefs.length).toBe(new Set(hrefs).size)
+  })
+
+  it('Multi-Role Array mit einer Rolle: identisch zur Single-Rolle', () => {
+    expect(getNavItems(['kind'])).toEqual(getNavItems('kind'))
+    expect(getNavItems(['lehrperson'])).toEqual(getNavItems('lehrperson'))
+    expect(getNavItems(['schulleitung'])).toEqual(getNavItems('schulleitung'))
+  })
 })

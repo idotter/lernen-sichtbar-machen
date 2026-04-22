@@ -7,7 +7,7 @@ vi.mock('@/lib/db/client', () => ({
   },
 }))
 
-import { getCurrentUser } from './users'
+import { getCurrentUser, getUserRoles } from './users'
 import { db } from '@/lib/db/client'
 
 describe('getCurrentUser', () => {
@@ -79,5 +79,68 @@ describe('getCurrentUser', () => {
     // Der Aufruf enthält eine kombinierte Bedingung (and() mit zwei Teilen)
     const whereArg = mockWhere.mock.calls[0][0]
     expect(whereArg).toBeDefined()
+  })
+})
+
+describe('getUserRoles', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('gibt Rolle als Array zurück', async () => {
+    const mockUser = {
+      id: 'user-123',
+      schoolId: 'school-456',
+      role: 'schulleitung',
+      email: 'sl@schule.ch',
+      displayName: null,
+      isDeleted: false,
+      deletedAt: null,
+      createdAt: new Date(),
+    }
+    const mockChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([mockUser]),
+    }
+    vi.mocked(db.select).mockReturnValue(mockChain as any)
+
+    const roles = await getUserRoles('user-123')
+    expect(roles).toEqual(['schulleitung'])
+  })
+
+  it('gibt leeres Array zurück wenn User nicht gefunden (soft-deleted oder inexistent)', async () => {
+    const mockChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([]),
+    }
+    vi.mocked(db.select).mockReturnValue(mockChain as any)
+
+    const roles = await getUserRoles('deleted-user')
+    expect(roles).toEqual([])
+  })
+
+  it('LP-User gibt [lehrperson] zurück', async () => {
+    const mockUser = {
+      id: 'lp-123',
+      schoolId: 'school-456',
+      role: 'lehrperson',
+      email: 'lp@schule.ch',
+      displayName: 'Lehrperson Test',
+      isDeleted: false,
+      deletedAt: null,
+      createdAt: new Date(),
+    }
+    const mockChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([mockUser]),
+    }
+    vi.mocked(db.select).mockReturnValue(mockChain as any)
+
+    const roles = await getUserRoles('lp-123')
+    expect(roles).toEqual(['lehrperson'])
+    expect(Array.isArray(roles)).toBe(true)
   })
 })

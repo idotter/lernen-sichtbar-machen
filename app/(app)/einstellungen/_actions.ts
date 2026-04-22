@@ -8,6 +8,7 @@ import { users } from '@/lib/db/schema/users'
 import { getCurrentUser } from '@/lib/db/queries/users'
 import { ok, fail, fromZodError, type ActionResult } from '@/lib/utils/action-result'
 import { getBaseUrl } from '@/lib/utils/base-url'
+import { revalidatePath } from 'next/cache'
 
 const einladungSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
@@ -134,5 +135,54 @@ export async function inviteLehrperson(
     return fail('Einladung konnte nicht verschickt werden.')
   }
 
+  return ok(undefined)
+}
+
+const promoteSchema = z.object({
+  userId: z.string().uuid('Ungültige User-ID'),
+})
+
+/**
+ * SL befördert eine LP zur Schulleitung (Story 2.5).
+ * MVP: Aktualisiert die role-Spalte auf 'schulleitung'.
+ * Duplikat-Schutz: User hat bereits SL-Rolle → Fehler.
+ */
+export async function promoteToSchulleitung(
+  _prevState: ActionResult<void> | null,
+  formData: FormData
+): Promise<ActionResult<void>> {
+  const raw = { userId: formData.get('userId') }
+  const parsed = promoteSchema.safeParse(raw)
+  if (!parsed.success) return fromZodError(parsed.error) as ActionResult<void>
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return fail('Nicht eingeloggt.')
+
+  const currentUser = await getCurrentUser(user.id)
+  if (!currentUser) return fail('Kein Benutzerkonto gefunden.')
+  if (currentUser.role !== 'schulleitung') return fail('Keine Berechtigung — nur Schulleitungen können promoten.')
+
+  const [target] = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.id, parsed.data.userId),
+        eq(users.schoolId, currentUser.schoolId),
+        eq(users.isDeleted, false)
+      )
+    )
+    .limit(1)
+
+  if (!target) return fail('Benutzer nicht gefunden.')
+  if (target.role === 'schulleitung') return fail('Person hat bereits Schulleitung-Rechte.')
+
+  await db
+    .update(users)
+    .set({ role: 'schulleitung' })
+    .where(eq(users.id, parsed.data.userId))
+
+  revalidatePath('/einstellungen')
   return ok(undefined)
 }

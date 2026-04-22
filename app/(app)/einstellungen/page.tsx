@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentUser } from '@/lib/db/queries/users'
+import { getCurrentUser, getUsersBySchool } from '@/lib/db/queries/users'
 import { getSchoolUnit } from '@/lib/db/queries/school-units'
 import { SlEinladungForm } from '@/components/features/auth/SlEinladungForm'
 import { LpEinladungForm } from '@/components/features/auth/LpEinladungForm'
+import { TeamMemberRow } from '@/components/features/einstellungen/TeamMemberRow'
 
 export const metadata = { title: 'Einstellungen — Lernen sichtbar machen' }
 
@@ -26,6 +27,8 @@ export default async function EinstellungenPage() {
   }
 
   const adapterLabel = CURRICULUM_ADAPTER_LABELS[schoolUnit.curriculumAdapter] ?? schoolUnit.curriculumAdapter
+  const teamMembers = await getUsersBySchool(currentUser.schoolId)
+  const isSchulleitung = currentUser.role === 'schulleitung'
 
   return (
     <div className="min-h-screen bg-lsm-bg p-6">
@@ -93,6 +96,27 @@ export default async function EinstellungenPage() {
             Schuleinheit erstellen und Lernende verwalten.
           </p>
           <LpEinladungForm />
+        </section>
+
+        {/* Team-Mitglieder */}
+        <section className="bg-lsm-surface rounded-lg border p-6 space-y-4">
+          <h2 className="font-semibold">Team-Mitglieder</h2>
+          <p className="text-sm text-muted-foreground">
+            Alle aktiven Mitglieder dieser Schuleinheit.
+            {isSchulleitung && ' Als Schulleitung können Sie Lehrpersonen zu Schulleitungen befördern.'}
+          </p>
+          <div>
+            {teamMembers.map((member) => (
+              <TeamMemberRow
+                key={member.id}
+                member={member}
+                canPromote={isSchulleitung && member.id !== currentUser.id}
+              />
+            ))}
+            {teamMembers.length === 0 && (
+              <p className="text-sm text-muted-foreground">Noch keine Mitglieder vorhanden.</p>
+            )}
+          </div>
         </section>
       </div>
     </div>
