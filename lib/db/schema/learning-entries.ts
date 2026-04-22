@@ -3,7 +3,8 @@ import { schoolUnits } from './school-units'
 import { classes } from './classes'
 import { children } from './children'
 
-export const learningEntryTypeEnum = pgEnum('learning_entry_type', ['frage', 'schritt'])
+export const learningEntryTypeEnum = pgEnum('learning_entry_type', ['frage', 'schritt', 'ki_question'])
+export const learningEntryStatusEnum = pgEnum('learning_entry_status', ['aktiv', 'abgeschlossen'])
 
 export const learningEntries = pgTable('learning_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -11,8 +12,9 @@ export const learningEntries = pgTable('learning_entries', {
   classId: uuid('class_id').references(() => classes.id, { onDelete: 'cascade' }).notNull(),
   schoolId: uuid('school_id').references(() => schoolUnits.id, { onDelete: 'cascade' }).notNull(),
   type: learningEntryTypeEnum('type').notNull(),
+  status: learningEntryStatusEnum('status').notNull().default('aktiv'),
   text: text('text'),
-  // parentId für KI-Gegenfragen — Referenz auf auslösenden Eintrag (Story 4.x)
+  // parentId verknüpft Lernschritte und KI-Fragen mit dem auslösenden Vorhaben
   parentId: uuid('parent_id'),
   isDeleted: boolean('is_deleted').default(false).notNull(),
   deletedAt: timestamp('deleted_at'),
