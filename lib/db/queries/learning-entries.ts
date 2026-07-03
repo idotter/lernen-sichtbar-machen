@@ -59,7 +59,11 @@ export async function createLearningEntry(
 export interface CreateLearningEntryWithArtefactParams {
   child: { id: string; classId: string; schoolId: string }
   text: string | null
-  upload: (entryId: string) => Promise<{
+  parentId?: string | null
+  artefactType?: 'bild' | 'link'
+  artefactUrl?: string
+  artefactContent?: string | null
+  upload?: (entryId: string) => Promise<{
     publicUrl: string
     mimeType: string
     sizeBytes: number
@@ -74,6 +78,10 @@ export interface CreateLearningEntryWithArtefactParams {
 export async function createLearningEntryWithArtefact({
   child,
   text,
+  parentId = null,
+  artefactType,
+  artefactUrl,
+  artefactContent = null,
   upload,
 }: CreateLearningEntryWithArtefactParams): Promise<{ entry: LearningEntry; artefact: Artefact }> {
   return db.transaction(async (tx) => {
@@ -86,11 +94,20 @@ export async function createLearningEntryWithArtefact({
         type: 'schritt',
         status: 'aktiv',
         text,
-        parentId: null,
+        parentId,
       })
       .returning()
 
-    const uploaded = await upload(entry.id)
+    let type: 'bild' | 'link' = artefactType ?? 'bild'
+    let url: string | null = artefactUrl ?? null
+    let sizeBytes: number | null = null
+
+    if (upload) {
+      const uploaded = await upload(entry.id)
+      type = 'bild'
+      url = uploaded.publicUrl
+      sizeBytes = uploaded.sizeBytes
+    }
 
     const [artefact] = await tx
       .insert(artefacts)
@@ -98,10 +115,10 @@ export async function createLearningEntryWithArtefact({
         learningEntryId: entry.id,
         childId: child.id,
         schoolId: child.schoolId,
-        type: 'bild',
-        url: uploaded.publicUrl,
-        content: null,
-        fileSizeBytes: uploaded.sizeBytes,
+        type,
+        url,
+        content: artefactContent,
+        fileSizeBytes: sizeBytes,
       })
       .returning()
 

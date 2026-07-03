@@ -8,7 +8,13 @@ vi.mock('@/lib/db/queries/learning-entries', () => ({
 }))
 vi.mock('@/lib/storage/upload-artefakt', () => ({ uploadArtefakt: vi.fn() }))
 
-import { createLernEntry, addLernschritt, createLernEntryWithArtefact } from './_actions'
+import {
+  createLernEntry,
+  addLernschritt,
+  addLernschrittMitFoto,
+  addLernschrittMitLink,
+  createLernEntryWithArtefact,
+} from './_actions'
 import { getCurrentChild } from '@/lib/auth/children-session'
 import {
   createLearningEntry,
@@ -117,6 +123,8 @@ describe('createLernEntryWithArtefact', () => {
   })
 })
 
+const PARENT_UUID = '11111111-1111-4111-8111-111111111111'
+
 describe('addLernschritt', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -126,13 +134,86 @@ describe('addLernschritt', () => {
     expect(r.success).toBe(false)
   })
 
-  it('erstellt schritt mit parentId', async () => {
+  it('lehnt ungültige UUID ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    const r = await addLernschritt(null, fd({ text: 'Neuer Schritt', parentId: 'parent-1' }))
+    expect(r.success).toBe(false)
+  })
+
+  it('erstellt schritt mit UUID parentId', async () => {
     vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
     vi.mocked(createLearningEntry).mockResolvedValue({ id: 'e2', type: 'schritt' } as never)
-    const r = await addLernschritt(null, fd({ text: 'Ich habe recherchiert', parentId: 'parent-1' }))
+    const r = await addLernschritt(null, fd({ text: 'Ich habe recherchiert', parentId: PARENT_UUID }))
     expect(r.success).toBe(true)
     expect(createLearningEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'schritt', parentId: 'parent-1' })
+      expect.objectContaining({ type: 'schritt', parentId: PARENT_UUID })
     )
+  })
+})
+
+describe('addLernschrittMitFoto', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function makeFile(name = 'foto.jpg', type = 'image/jpeg', size = 1024): File {
+    return new File([new Uint8Array(size)], name, { type })
+  }
+
+  it('erstellt Schritt + Bild-Artefakt', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    vi.mocked(createLearningEntryWithArtefact).mockResolvedValue({
+      entry: { id: 'e1' },
+      artefact: { id: 'a1' },
+    } as never)
+    const f = new FormData()
+    f.append('file', makeFile())
+    f.append('parentId', PARENT_UUID)
+    f.append('comment', 'Foto vom Vulkan')
+    const r = await addLernschrittMitFoto(null, f)
+    expect(r.success).toBe(true)
+    expect(createLearningEntryWithArtefact).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: PARENT_UUID, artefactType: 'bild', text: 'Foto vom Vulkan' })
+    )
+  })
+
+  it('lehnt ohne parentId ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    const f = new FormData()
+    f.append('file', makeFile())
+    const r = await addLernschrittMitFoto(null, f)
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('addLernschrittMitLink', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('erstellt Schritt mit Link-Artefakt', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    vi.mocked(createLearningEntryWithArtefact).mockResolvedValue({
+      entry: { id: 'e1' },
+      artefact: { id: 'a1' },
+    } as never)
+    const r = await addLernschrittMitLink(
+      null,
+      fd({ parentId: PARENT_UUID, url: 'https://example.com', comment: 'Quelle' })
+    )
+    expect(r.success).toBe(true)
+    expect(createLearningEntryWithArtefact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentId: PARENT_UUID,
+        artefactType: 'link',
+        artefactUrl: 'https://example.com',
+        text: 'Quelle',
+      })
+    )
+  })
+
+  it('lehnt ungültige URL ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    const r = await addLernschrittMitLink(
+      null,
+      fd({ parentId: PARENT_UUID, url: 'nicht-url' })
+    )
+    expect(r.success).toBe(false)
   })
 })
