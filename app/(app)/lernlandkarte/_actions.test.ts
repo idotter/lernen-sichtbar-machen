@@ -5,7 +5,11 @@ vi.mock('@/lib/auth/children-session', () => ({ getCurrentChild: vi.fn() }))
 vi.mock('@/lib/db/queries/learning-entries', () => ({
   createLearningEntry: vi.fn(),
   createLearningEntryWithArtefact: vi.fn(),
+  confirmKIQuestion: vi.fn(),
 }))
+vi.mock('@/lib/db/queries/users', () => ({ getCurrentUser: vi.fn() }))
+vi.mock('@/lib/db/queries/audit-log', () => ({ writeAuditLog: vi.fn() }))
+vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/storage/upload-artefakt', () => ({ uploadArtefakt: vi.fn() }))
 vi.mock('@/lib/inngest/client', () => ({ inngest: { send: vi.fn() } }))
 

@@ -4,7 +4,11 @@ import { getCurrentChild } from '@/lib/auth/children-session'
 import {
   createLearningEntry,
   createLearningEntryWithArtefact,
+  confirmKIQuestion,
 } from '@/lib/db/queries/learning-entries'
+import { getCurrentUser } from '@/lib/db/queries/users'
+import { writeAuditLog } from '@/lib/db/queries/audit-log'
+import { createClient as createSupabaseServer } from '@/lib/supabase/server'
 import { createLernEntrySchema } from '@/lib/validators/learning-entry'
 import { artefactUploadSchema } from '@/lib/validators/artefact'
 import {
@@ -129,6 +133,35 @@ export async function addLernschritt(
     actorId: childSession.child.id,
     learningEntryId: entry.id,
     learningStep: parsed.data.text,
+  })
+
+  revalidatePath('/lernlandkarte')
+  return ok(entry)
+}
+
+/**
+ * Bestätigt eine KI-Frage — wechselt visuell von gestrichelt zu solid (UX-DR8).
+ * Nur Lehrpersonen/Schulleitung (authentifizierte User) dürfen bestätigen.
+ * Schreibt Audit-Log (Story 4.4).
+ */
+export async function confirmKIQuestionAction(
+  entryId: string
+): Promise<ActionResult<LearningEntry>> {
+  const supabase = await createSupabaseServer()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return fail('Nicht angemeldet.')
+
+  const dbUser = await getCurrentUser(user.id)
+  if (!dbUser) return fail('User nicht gefunden.')
+
+  const entry = await confirmKIQuestion(entryId, dbUser.id)
+  if (!entry) return fail('KI-Frage nicht gefunden.')
+
+  await writeAuditLog({
+    schoolId: entry.schoolId,
+    actorId: dbUser.id,
+    eventType: 'ai/lp21-confirmation',
+    payload: { entryId, action: 'confirm-ki-question' },
   })
 
   revalidatePath('/lernlandkarte')

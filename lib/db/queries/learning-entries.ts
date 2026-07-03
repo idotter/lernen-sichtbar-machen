@@ -1,4 +1,4 @@
-import { and, eq, isNull, asc } from 'drizzle-orm'
+import { and, eq, isNull, asc, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { learningEntries, type LearningEntry } from '@/lib/db/schema/learning-entries'
 import { artefacts, type Artefact } from '@/lib/db/schema/artefacts'
@@ -92,6 +92,22 @@ export async function getTimelineWithArtefacts(childId: string): Promise<
     .slice()
     .reverse()
     .map((root) => ({ ...root, children: childrenByParent.get(root.id) ?? [] }))
+}
+
+/**
+ * Bestätigt eine KI-Frage (setzt `ki_confirmed_at` + `ki_confirmed_by`).
+ * Return: aktualisierter Eintrag oder `null` wenn nicht gefunden.
+ */
+export async function confirmKIQuestion(
+  entryId: string,
+  actorUserId: string
+): Promise<LearningEntry | null> {
+  const [row] = await db
+    .update(learningEntries)
+    .set({ kiConfirmedAt: sql`now()`, kiConfirmedBy: actorUserId })
+    .where(and(eq(learningEntries.id, entryId), eq(learningEntries.type, 'ki_question')))
+    .returning()
+  return row ?? null
 }
 
 /**

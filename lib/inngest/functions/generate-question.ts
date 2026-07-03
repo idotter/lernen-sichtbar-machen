@@ -43,6 +43,7 @@ export const generateQuestion = inngest.createFunction(
         status: 'aktiv',
         text: kiResponse.question,
         parentId: learningEntryId,
+        reasoning: kiResponse.reasoning,
       })
     })
 

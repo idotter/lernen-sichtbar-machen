@@ -2,6 +2,7 @@ import { pgTable, uuid, text, timestamp, boolean, pgEnum } from 'drizzle-orm/pg-
 import { schoolUnits } from './school-units'
 import { classes } from './classes'
 import { children } from './children'
+import { users } from './users'
 
 export const learningEntryTypeEnum = pgEnum('learning_entry_type', ['frage', 'schritt', 'ki_question'])
 export const learningEntryStatusEnum = pgEnum('learning_entry_status', ['aktiv', 'abgeschlossen'])
@@ -16,6 +17,10 @@ export const learningEntries = pgTable('learning_entries', {
   text: text('text'),
   // parentId verknüpft Lernschritte und KI-Fragen mit dem auslösenden Vorhaben
   parentId: uuid('parent_id'),
+  // KI-Metadata (Story 4.3)
+  reasoning: text('reasoning'),
+  kiConfirmedAt: timestamp('ki_confirmed_at'),
+  kiConfirmedBy: uuid('ki_confirmed_by').references(() => users.id, { onDelete: 'set null' }),
   isDeleted: boolean('is_deleted').default(false).notNull(),
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
