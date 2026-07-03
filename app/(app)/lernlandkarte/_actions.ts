@@ -13,6 +13,7 @@ import {
   lernschrittLinkSchema,
 } from '@/lib/validators/lernschritt'
 import { uploadArtefakt } from '@/lib/storage/upload-artefakt'
+import { inngest } from '@/lib/inngest/client'
 import { ok, fail, fromZodError, type ActionResult } from '@/lib/utils/action-result'
 import type { LearningEntry } from '@/lib/db/schema/learning-entries'
 import type { Artefact } from '@/lib/db/schema/artefacts'
@@ -95,6 +96,8 @@ export async function createLernEntryWithArtefact(
 
 /**
  * Text-Lernschritt zu einem bestehenden Vorhaben hinzufügen.
+ * Triggert nach dem Speichern ein `ai/generate-question` Event für die
+ * sokratische Gegenfrage (asynchron via Inngest, blockiert die Response nicht).
  */
 export async function addLernschritt(
   _prevState: CreateLernEntryResult | null,
@@ -119,8 +122,36 @@ export async function addLernschritt(
     parentId: parsed.data.parentId,
   })
 
+  await triggerGenerateQuestion({
+    schoolId: childSession.child.schoolId,
+    childId: childSession.child.id,
+    classId: childSession.child.classId,
+    actorId: childSession.child.id,
+    learningEntryId: entry.id,
+    learningStep: parsed.data.text,
+  })
+
   revalidatePath('/lernlandkarte')
   return ok(entry)
+}
+
+/** Fire-and-forget Inngest-Trigger; Fehler blockieren die UI nicht. */
+async function triggerGenerateQuestion(params: {
+  schoolId: string
+  actorId: string
+  childId: string
+  classId: string
+  learningEntryId: string
+  learningStep: string
+}): Promise<void> {
+  try {
+    await inngest.send({
+      name: 'ai/generate-question',
+      data: { ...params, previousEntries: [] },
+    })
+  } catch (err) {
+    console.error('[inngest] send failed', err)
+  }
 }
 
 /**

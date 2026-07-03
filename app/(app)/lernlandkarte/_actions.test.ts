@@ -7,6 +7,7 @@ vi.mock('@/lib/db/queries/learning-entries', () => ({
   createLearningEntryWithArtefact: vi.fn(),
 }))
 vi.mock('@/lib/storage/upload-artefakt', () => ({ uploadArtefakt: vi.fn() }))
+vi.mock('@/lib/inngest/client', () => ({ inngest: { send: vi.fn() } }))
 
 import {
   createLernEntry,
@@ -20,9 +21,13 @@ import {
   createLearningEntry,
   createLearningEntryWithArtefact,
 } from '@/lib/db/queries/learning-entries'
+import { inngest } from '@/lib/inngest/client'
 
+const CHILD_UUID = '22222222-2222-4222-8222-222222222222'
+const CLASS_UUID = '33333333-3333-4333-8333-333333333333'
+const SCHOOL_UUID = '44444444-4444-4444-8444-444444444444'
 const mockChild = {
-  child: { id: 'child-1', classId: 'class-1', schoolId: 'school-1' },
+  child: { id: CHILD_UUID, classId: CLASS_UUID, schoolId: SCHOOL_UUID },
 }
 
 function fd(entries: Record<string, string>): FormData {
@@ -53,9 +58,9 @@ describe('createLernEntry', () => {
     expect(r.success).toBe(true)
     expect(createLearningEntry).toHaveBeenCalledWith(
       expect.objectContaining({
-        childId: 'child-1',
-        schoolId: 'school-1',
-        classId: 'class-1',
+        childId: CHILD_UUID,
+        schoolId: SCHOOL_UUID,
+        classId: CLASS_UUID,
         type: 'frage',
         status: 'aktiv',
         text: 'Warum ist Wasser nass?',
@@ -140,7 +145,7 @@ describe('addLernschritt', () => {
     expect(r.success).toBe(false)
   })
 
-  it('erstellt schritt mit UUID parentId', async () => {
+  it('erstellt schritt mit UUID parentId und triggert Inngest-Event', async () => {
     vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
     vi.mocked(createLearningEntry).mockResolvedValue({ id: 'e2', type: 'schritt' } as never)
     const r = await addLernschritt(null, fd({ text: 'Ich habe recherchiert', parentId: PARENT_UUID }))
@@ -148,6 +153,24 @@ describe('addLernschritt', () => {
     expect(createLearningEntry).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'schritt', parentId: PARENT_UUID })
     )
+    expect(inngest.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ai/generate-question',
+        data: expect.objectContaining({
+          schoolId: SCHOOL_UUID,
+          childId: CHILD_UUID,
+          learningStep: 'Ich habe recherchiert',
+        }),
+      })
+    )
+  })
+
+  it('Lernschritt wird gespeichert auch wenn Inngest-Send scheitert', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    vi.mocked(createLearningEntry).mockResolvedValue({ id: 'e3', type: 'schritt' } as never)
+    vi.mocked(inngest.send).mockRejectedValue(new Error('inngest down'))
+    const r = await addLernschritt(null, fd({ text: 'Weiter recherchiert', parentId: PARENT_UUID }))
+    expect(r.success).toBe(true)
   })
 })
 
