@@ -44,6 +44,57 @@ export async function getTimelineEntries(childId: string): Promise<LearningEntry
 }
 
 /**
+ * Alle Einträge inkl. Artefakte, gruppiert nach Vorhaben (Root-Entry mit Kindern).
+ * Root = parentId IS NULL. Sortierung: Root nach createdAt DESC, Kinder ASC.
+ */
+export async function getTimelineWithArtefacts(childId: string): Promise<
+  Array<LearningEntryWithArtefacts & { children: LearningEntryWithArtefacts[] }>
+> {
+  const [entries, allArtefacts] = await Promise.all([
+    db
+      .select()
+      .from(learningEntries)
+      .where(
+        and(
+          eq(learningEntries.childId, childId),
+          eq(learningEntries.isDeleted, false)
+        )
+      )
+      .orderBy(asc(learningEntries.createdAt)),
+    db
+      .select()
+      .from(artefacts)
+      .where(and(eq(artefacts.childId, childId), eq(artefacts.isDeleted, false))),
+  ])
+
+  const artefactsByEntry = new Map<string, Artefact[]>()
+  for (const a of allArtefacts) {
+    const list = artefactsByEntry.get(a.learningEntryId) ?? []
+    list.push(a)
+    artefactsByEntry.set(a.learningEntryId, list)
+  }
+
+  const withArtefacts: LearningEntryWithArtefacts[] = entries.map((e) => ({
+    ...e,
+    artefacts: artefactsByEntry.get(e.id) ?? [],
+  }))
+
+  const roots = withArtefacts.filter((e) => e.parentId === null)
+  const childrenByParent = new Map<string, LearningEntryWithArtefacts[]>()
+  for (const e of withArtefacts) {
+    if (!e.parentId) continue
+    const list = childrenByParent.get(e.parentId) ?? []
+    list.push(e)
+    childrenByParent.set(e.parentId, list)
+  }
+
+  return roots
+    .slice()
+    .reverse()
+    .map((root) => ({ ...root, children: childrenByParent.get(root.id) ?? [] }))
+}
+
+/**
  * Neuen Lerneintrag anlegen (Vorhaben oder Schritt).
  */
 export async function createLearningEntry(
