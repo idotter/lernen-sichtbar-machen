@@ -1,7 +1,7 @@
 import { and, eq, isNull, asc } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { learningEntries, type LearningEntry } from '@/lib/db/schema/learning-entries'
-import { type Artefact } from '@/lib/db/schema/artefacts'
+import { artefacts, type Artefact } from '@/lib/db/schema/artefacts'
 
 export type LearningEntryWithArtefacts = LearningEntry & {
   artefacts: Artefact[]
@@ -54,4 +54,57 @@ export async function createLearningEntry(
     .values(data)
     .returning()
   return entry
+}
+
+export interface CreateLearningEntryWithArtefactParams {
+  child: { id: string; classId: string; schoolId: string }
+  text: string | null
+  upload: (entryId: string) => Promise<{
+    publicUrl: string
+    mimeType: string
+    sizeBytes: number
+  }>
+}
+
+/**
+ * Erstellt ein Lernvorhaben mit Bild-Artefakt in einer Transaktion.
+ * Upload läuft zwischen Entry-Insert und Artefakt-Insert; bei Upload-Fehler
+ * wird die Transaktion zurückgerollt.
+ */
+export async function createLearningEntryWithArtefact({
+  child,
+  text,
+  upload,
+}: CreateLearningEntryWithArtefactParams): Promise<{ entry: LearningEntry; artefact: Artefact }> {
+  return db.transaction(async (tx) => {
+    const [entry] = await tx
+      .insert(learningEntries)
+      .values({
+        childId: child.id,
+        classId: child.classId,
+        schoolId: child.schoolId,
+        type: 'schritt',
+        status: 'aktiv',
+        text,
+        parentId: null,
+      })
+      .returning()
+
+    const uploaded = await upload(entry.id)
+
+    const [artefact] = await tx
+      .insert(artefacts)
+      .values({
+        learningEntryId: entry.id,
+        childId: child.id,
+        schoolId: child.schoolId,
+        type: 'bild',
+        url: uploaded.publicUrl,
+        content: null,
+        fileSizeBytes: uploaded.sizeBytes,
+      })
+      .returning()
+
+    return { entry, artefact }
+  })
 }

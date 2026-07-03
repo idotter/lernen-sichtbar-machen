@@ -2,11 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/auth/children-session', () => ({ getCurrentChild: vi.fn() }))
-vi.mock('@/lib/db/queries/learning-entries', () => ({ createLearningEntry: vi.fn() }))
+vi.mock('@/lib/db/queries/learning-entries', () => ({
+  createLearningEntry: vi.fn(),
+  createLearningEntryWithArtefact: vi.fn(),
+}))
+vi.mock('@/lib/storage/upload-artefakt', () => ({ uploadArtefakt: vi.fn() }))
 
-import { createLernEntry, addLernschritt } from './_actions'
+import { createLernEntry, addLernschritt, createLernEntryWithArtefact } from './_actions'
 import { getCurrentChild } from '@/lib/auth/children-session'
-import { createLearningEntry } from '@/lib/db/queries/learning-entries'
+import {
+  createLearningEntry,
+  createLearningEntryWithArtefact,
+} from '@/lib/db/queries/learning-entries'
 
 const mockChild = {
   child: { id: 'child-1', classId: 'class-1', schoolId: 'school-1' },
@@ -49,6 +56,64 @@ describe('createLernEntry', () => {
         parentId: null,
       })
     )
+  })
+})
+
+describe('createLernEntryWithArtefact', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function makeFile(name = 'foto.jpg', type = 'image/jpeg', size = 1024): File {
+    return new File([new Uint8Array(size)], name, { type })
+  }
+
+  it('lehnt ohne Kind-Session ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(null)
+    const fd = new FormData()
+    fd.append('file', makeFile())
+    const r = await createLernEntryWithArtefact(null, fd)
+    expect(r.success).toBe(false)
+  })
+
+  it('lehnt ohne Datei ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    const r = await createLernEntryWithArtefact(null, new FormData())
+    expect(r.success).toBe(false)
+  })
+
+  it('lehnt SVG (unbekannter MIME-Typ) ab', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    const fd = new FormData()
+    fd.append('file', makeFile('x.svg', 'image/svg+xml', 100))
+    const r = await createLernEntryWithArtefact(null, fd)
+    expect(r.success).toBe(false)
+  })
+
+  it('erstellt Entry + Artefakt bei gültiger Datei', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    vi.mocked(createLearningEntryWithArtefact).mockResolvedValue({
+      entry: { id: 'e1' },
+      artefact: { id: 'a1' },
+    } as never)
+    const fd = new FormData()
+    fd.append('file', makeFile('foto.jpg', 'image/jpeg', 500))
+    fd.append('comment', '  Ein Vogel  ')
+    const r = await createLernEntryWithArtefact(null, fd)
+    expect(r.success).toBe(true)
+    expect(createLearningEntryWithArtefact).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Ein Vogel' })
+    )
+  })
+
+  it('gibt fail zurück bei Upload-Fehler', async () => {
+    vi.mocked(getCurrentChild).mockResolvedValue(mockChild as never)
+    vi.mocked(createLearningEntryWithArtefact).mockRejectedValue(
+      new Error('Upload fehlgeschlagen: Netzwerk')
+    )
+    const fd = new FormData()
+    fd.append('file', makeFile())
+    const r = await createLernEntryWithArtefact(null, fd)
+    expect(r.success).toBe(false)
+    if (!r.success) expect(r.error).toContain('Upload')
   })
 })
 
