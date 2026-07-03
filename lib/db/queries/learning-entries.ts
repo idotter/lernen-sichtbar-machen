@@ -1,7 +1,7 @@
 import { and, eq, isNull, asc } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { learningEntries, type LearningEntry } from '@/lib/db/schema/learning-entries'
-import { artefacts, type Artefact } from '@/lib/db/schema/artefacts'
+import { type Artefact } from '@/lib/db/schema/artefacts'
 
 export type LearningEntryWithArtefacts = LearningEntry & {
   artefacts: Artefact[]
