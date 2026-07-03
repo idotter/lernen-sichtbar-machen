@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/db/client', () => ({ db: { insert: vi.fn() } }))
+vi.mock('@/lib/db/client', () => ({ db: { insert: vi.fn(), select: vi.fn() } }))
 
-import { writeAuditLog } from './audit-log'
+import { writeAuditLog, getAuditEntries, countAuditEntries } from './audit-log'
 import { db } from '@/lib/db/client'
 
 function chain(rows: unknown[]) {
@@ -38,5 +38,40 @@ describe('writeAuditLog', () => {
       payload: {},
     })
     expect(r).toBeNull()
+  })
+})
+
+describe('getAuditEntries / countAuditEntries', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function selectChain(rows: unknown[]) {
+    const chain: {
+      from: () => typeof chain
+      where: () => typeof chain
+      orderBy: () => typeof chain
+      limit: () => typeof chain
+      offset: (n: number) => Promise<unknown[]>
+      then?: (resolve: (v: unknown[]) => void) => void
+    } = {
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: () => chain,
+      offset: async () => rows,
+    }
+    chain.then = (resolve) => resolve(rows)
+    return chain
+  }
+
+  it('gibt gefilterte Einträge zurück', async () => {
+    vi.mocked(db.select).mockReturnValue(selectChain([{ id: '1' }, { id: '2' }]) as never)
+    const r = await getAuditEntries('school-1', { limit: 10 })
+    expect(r).toHaveLength(2)
+  })
+
+  it('zählt Einträge korrekt', async () => {
+    vi.mocked(db.select).mockReturnValue(selectChain([{ id: '1' }, { id: '2' }, { id: '3' }]) as never)
+    const n = await countAuditEntries('school-1')
+    expect(n).toBe(3)
   })
 })

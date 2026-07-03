@@ -111,6 +111,19 @@ export async function confirmKIQuestion(
 }
 
 /**
+ * Lehnt eine KI-Frage ab — Soft-Delete (`is_deleted = true`).
+ * Der Audit-Log-Eintrag bleibt append-only erhalten.
+ */
+export async function rejectKIQuestion(entryId: string): Promise<LearningEntry | null> {
+  const [row] = await db
+    .update(learningEntries)
+    .set({ isDeleted: true, deletedAt: sql`now()` })
+    .where(and(eq(learningEntries.id, entryId), eq(learningEntries.type, 'ki_question')))
+    .returning()
+  return row ?? null
+}
+
+/**
  * Neuen Lerneintrag anlegen (Vorhaben oder Schritt).
  */
 export async function createLearningEntry(

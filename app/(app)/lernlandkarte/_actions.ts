@@ -5,6 +5,7 @@ import {
   createLearningEntry,
   createLearningEntryWithArtefact,
   confirmKIQuestion,
+  rejectKIQuestion,
 } from '@/lib/db/queries/learning-entries'
 import { getCurrentUser } from '@/lib/db/queries/users'
 import { writeAuditLog } from '@/lib/db/queries/audit-log'
@@ -160,11 +161,40 @@ export async function confirmKIQuestionAction(
   await writeAuditLog({
     schoolId: entry.schoolId,
     actorId: dbUser.id,
-    eventType: 'ai/lp21-confirmation',
-    payload: { entryId, action: 'confirm-ki-question' },
+    eventType: 'ai/ki-confirmed',
+    payload: { entryId, decision: 'confirmed', decidedBy: dbUser.id },
   })
 
   revalidatePath('/lernlandkarte')
+  revalidatePath('/ki-log')
+  return ok(entry)
+}
+
+/**
+ * Lehnt eine KI-Frage ab (Soft-Delete) und schreibt einen Audit-Entry.
+ */
+export async function rejectKIQuestionAction(
+  entryId: string
+): Promise<ActionResult<LearningEntry>> {
+  const supabase = await createSupabaseServer()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return fail('Nicht angemeldet.')
+
+  const dbUser = await getCurrentUser(user.id)
+  if (!dbUser) return fail('User nicht gefunden.')
+
+  const entry = await rejectKIQuestion(entryId)
+  if (!entry) return fail('KI-Frage nicht gefunden.')
+
+  await writeAuditLog({
+    schoolId: entry.schoolId,
+    actorId: dbUser.id,
+    eventType: 'ai/ki-rejected',
+    payload: { entryId, decision: 'rejected', decidedBy: dbUser.id },
+  })
+
+  revalidatePath('/lernlandkarte')
+  revalidatePath('/ki-log')
   return ok(entry)
 }
 

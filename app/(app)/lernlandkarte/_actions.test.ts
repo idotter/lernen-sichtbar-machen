@@ -6,6 +6,7 @@ vi.mock('@/lib/db/queries/learning-entries', () => ({
   createLearningEntry: vi.fn(),
   createLearningEntryWithArtefact: vi.fn(),
   confirmKIQuestion: vi.fn(),
+  rejectKIQuestion: vi.fn(),
 }))
 vi.mock('@/lib/db/queries/users', () => ({ getCurrentUser: vi.fn() }))
 vi.mock('@/lib/db/queries/audit-log', () => ({ writeAuditLog: vi.fn() }))
@@ -19,7 +20,16 @@ import {
   addLernschrittMitFoto,
   addLernschrittMitLink,
   createLernEntryWithArtefact,
+  confirmKIQuestionAction,
+  rejectKIQuestionAction,
 } from './_actions'
+import {
+  confirmKIQuestion,
+  rejectKIQuestion,
+} from '@/lib/db/queries/learning-entries'
+import { getCurrentUser } from '@/lib/db/queries/users'
+import { writeAuditLog } from '@/lib/db/queries/audit-log'
+import { createClient as createSupabaseServer } from '@/lib/supabase/server'
 import { getCurrentChild } from '@/lib/auth/children-session'
 import {
   createLearningEntry,
@@ -241,6 +251,57 @@ describe('addLernschrittMitLink', () => {
       null,
       fd({ parentId: PARENT_UUID, url: 'nicht-url' })
     )
+    expect(r.success).toBe(false)
+  })
+})
+
+describe('confirmKIQuestionAction / rejectKIQuestionAction', () => {
+  const AUTH_USER_ID = '55555555-5555-4555-8555-555555555555'
+  const DB_USER_ID = '66666666-6666-4666-8666-666666666666'
+
+  function mockSupabaseWithUser(userId: string | null) {
+    vi.mocked(createSupabaseServer).mockResolvedValue({
+      auth: {
+        getUser: async () => ({ data: { user: userId ? { id: userId } : null } }),
+      },
+    } as never)
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('confirm ohne Auth wird abgelehnt', async () => {
+    mockSupabaseWithUser(null)
+    const r = await confirmKIQuestionAction('entry-1')
+    expect(r.success).toBe(false)
+  })
+
+  it('confirm schreibt Audit-Log ai/ki-confirmed', async () => {
+    mockSupabaseWithUser(AUTH_USER_ID)
+    vi.mocked(getCurrentUser).mockResolvedValue({ id: DB_USER_ID, schoolId: SCHOOL_UUID } as never)
+    vi.mocked(confirmKIQuestion).mockResolvedValue({ id: 'ki-1', schoolId: SCHOOL_UUID } as never)
+    const r = await confirmKIQuestionAction('ki-1')
+    expect(r.success).toBe(true)
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ai/ki-confirmed', actorId: DB_USER_ID })
+    )
+  })
+
+  it('reject setzt isDeleted + schreibt Audit-Log ai/ki-rejected', async () => {
+    mockSupabaseWithUser(AUTH_USER_ID)
+    vi.mocked(getCurrentUser).mockResolvedValue({ id: DB_USER_ID, schoolId: SCHOOL_UUID } as never)
+    vi.mocked(rejectKIQuestion).mockResolvedValue({ id: 'ki-1', schoolId: SCHOOL_UUID } as never)
+    const r = await rejectKIQuestionAction('ki-1')
+    expect(r.success).toBe(true)
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ai/ki-rejected', actorId: DB_USER_ID })
+    )
+  })
+
+  it('reject gibt fail zurück wenn Entry nicht gefunden', async () => {
+    mockSupabaseWithUser(AUTH_USER_ID)
+    vi.mocked(getCurrentUser).mockResolvedValue({ id: DB_USER_ID, schoolId: SCHOOL_UUID } as never)
+    vi.mocked(rejectKIQuestion).mockResolvedValue(null)
+    const r = await rejectKIQuestionAction('ki-1')
     expect(r.success).toBe(false)
   })
 })
